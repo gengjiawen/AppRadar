@@ -3,3 +3,7 @@
 # Download
 
 Support macOS only: https://github.com/djyde/AppRadar/releases
+
+# Sponsor
+
+[![](https://github.com/user-attachments/assets/b200b33f-d0db-45d9-b771-19790348b3a5)](https://padding-left.com)
