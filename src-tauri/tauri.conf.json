@@ -17,7 +17,16 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI0MEM2OTk5RDIyQkM0NEEKUldSS3hDdlNtV2tNSkwzRTIvYjVESmc2TktOKzA5S0s5KzBrOC9UMFJUOUdxbEgwem5sOXVzSHkK",
+      "endpoints": [
+        "https://github.com/djyde/AppRadar/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
+    "createUpdaterArtifacts": true,
     "active": true,
     "targets": "all",
     "icon": [
