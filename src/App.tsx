@@ -7,6 +7,7 @@ import { Filter } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { useMemo, useState } from "react";
 import { ScrollArea } from "./components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
 function App() {
 
   const appIndexingQuery = useQuery({
@@ -33,7 +34,7 @@ function App() {
     const width = 32;
     switch (framework) {
       case "tauri":
-        return <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 128 128">
+        return <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 128 128">
           <path fill="#ffc131" d="M86.242 46.547a12.19 12.19 0 0 1-24.379 0c0-6.734 5.457-12.191 12.191-12.191a12.19 12.19 0 0 1 12.188 12.191m0 0"></path>
           <path fill="#24c8db" d="M41.359 81.453a12.19 12.19 0 1 1 24.383 0c0 6.734-5.457 12.191-12.191 12.191S41.36 88.187 41.36 81.453zm0 0"></path>
           <path fill="#ffc131" d="M99.316 85.637a46.5 46.5 0 0 1-16.059 6.535a32.7 32.7 0 0 0 1.797-10.719a33 33 0 0 0-.242-4.02a32.7 32.7 0 0 0 6.996-3.418a32.7 32.7 0 0 0 12.066-14.035a32.71 32.71 0 0 0-21.011-44.934a32.72 32.72 0 0 0-33.91 10.527a33 33 0 0 0-1.48 1.91a54.3 54.3 0 0 0-17.848 5.184A46.54 46.54 0 0 1 60.25 2.094a46.53 46.53 0 0 1 26.34-.375c8.633 2.418 16.387 7.273 22.324 13.984s9.813 15 11.16 23.863a46.54 46.54 0 0 1-20.758 46.071M30.18 41.156l11.41 1.402a32.4 32.4 0 0 1 1.473-6.469a46.4 46.4 0 0 0-12.883 5.066zm0 0"></path>
@@ -165,12 +166,29 @@ function App() {
           </DropdownMenu>
         </div>
         <div className="p-5 flex flex-col gap-3">
-          {filteredApps?.map((app) => (
-            <div className="flex p-5 justify-between items-center border rounded-xl" key={app.name}>
-              <div className="font-bold text-2xl">{app.name}</div>
-              <div className="">{renderFrameworkIcon(app.framework)}</div>
-            </div>
-          ))}
+          <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3">
+            {filteredApps?.map((app) => (
+              <>
+                <div className="flex flex-col p-5 items-center justify-end rounded-xl gap-2" key={app.name}>
+                  <TooltipProvider delayDuration={100}>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <div className="">{renderFrameworkIcon(app.framework)}</div>
+
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        <p>{app.name}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <div className="font-bold text-xs mt-2 text-center text-ellipsis overflow-hidden whitespace-nowrap w-full">{app.name}</div>
+                </div>
+                
+              </>
+
+
+            ))}
+          </div>
         </div>
       </ScrollArea>}
     </>
@@ -184,8 +202,8 @@ function LoadingIndicator() {
   return <div className="h-dvh flex items-center justify-center">
     <div className="animate-spin">
       <svg xmlns="http://www.w3.org/2000/svg" width={24} height={24} viewBox="0 0 24 24">
-        <path fill="currentColor" d="M12 2A10 10 0 1 0 22 12A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8A8 8 0 0 1 12 20Z" opacity={0.5}/>
-        <path fill="currentColor" d="M20 12h2A10 10 0 0 0 12 2V4A8 8 0 0 1 20 12Z"/>
+        <path fill="currentColor" d="M12 2A10 10 0 1 0 22 12A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8A8 8 0 0 1 12 20Z" opacity={0.5} />
+        <path fill="currentColor" d="M20 12h2A10 10 0 0 0 12 2V4A8 8 0 0 1 20 12Z" />
       </svg>
     </div>
   </div>
