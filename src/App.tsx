@@ -3,36 +3,57 @@ import "./App.css";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "./components/ui/input";
 import { Button } from "./components/ui/button";
-import { Filter } from "lucide-react";
+import { Filter, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollArea } from "./components/ui/scroll-area";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./components/ui/tooltip";
+
+const CachedSize = new Map<string, number>();
+async function getAppSize(path: string) {
+  if (CachedSize.has(path)) {
+    return CachedSize.get(path) as number;
+  }
+  const size = await invoke("get_app_size", { path });
+  CachedSize.set(path, size as number);
+  return size as number;
+}
+
 function App() {
 
   const appIndexingQuery = useQuery({
     queryKey: ["app-indexing"],
     queryFn: async () => {
       const frameworks = await invoke("get_app_frameworks");
-      return frameworks as any[];
+      return frameworks as {
+        name: string;
+        path: string;
+        framework: string;
+      }[];
     },
   });
 
-  const [selectedFramework, setSelectedFramework] = useState<string | null>(null);
+  const [selectedFramework, setSelectedFramework] = useState<string>("all");
   const [search, setSearch] = useState("");
 
   const filteredApps = useMemo(() => {
     if (search) {
       return appIndexingQuery.data?.filter((app) => app.name.toLowerCase().includes(search.toLowerCase()));
     } else {
-      return appIndexingQuery.data?.filter((app) => selectedFramework ? app.framework === selectedFramework : true);
+      return appIndexingQuery.data?.filter((app) => selectedFramework === "all" ? true : app.framework === selectedFramework);
     }
   }, [appIndexingQuery.data, selectedFramework, search]);
 
-  function renderFrameworkIcon(framework: string) {
-    const height = 32;
-    const width = 32;
+  function renderFrameworkIcon(framework: string, options?: {
+    width?: number;
+    height?: number;
+  }) {
+    const height = options?.height || 32;
+    const width = options?.width || 32;
     switch (framework) {
+      case "all":
+        return <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 24 24">
+          <path fill="white" d="M14.116 20q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0-8.5q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14T14.115 4h4.27q.666 0 1.14.475T20 5.615v4.27q0 .666-.475 1.14t-1.14.475zm-8.5 0q-.667 0-1.141-.475T4 9.885v-4.27q0-.666.475-1.14T5.615 4h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0 8.5q-.667 0-1.141-.475T4 18.386v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14T9.885 20z"></path>
+        </svg>
       case "tauri":
         return <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 128 128">
           <path fill="#ffc131" d="M86.242 46.547a12.19 12.19 0 0 1-24.379 0c0-6.734 5.457-12.191 12.191-12.191a12.19 12.19 0 0 1 12.188 12.191m0 0"></path>
@@ -92,104 +113,143 @@ function App() {
     }, {} as Record<string, number>);
   }, [appIndexingQuery.data]);
 
+  const totalSizeByFrameworkQuery = useQuery({
+    queryKey: ["totalSizeByFramework", selectedFramework],
+    queryFn: async () => {
+      console.log("querying", selectedFramework);
+      const apps = appIndexingQuery.data?.filter(app => app.framework === selectedFramework);
+      const totalSize = await Promise.all(apps?.map(app => getAppSize(app.path)) || []);
+      return totalSize.reduce((acc, size) => acc + size, 0);
+    },
+    staleTime: Infinity,
+    enabled: !!selectedFramework,
+  });
+
+  const totalSizeLabel = useMemo(() => {
+    const totalSize = (totalSizeByFrameworkQuery.data || 0);
+    if (totalSize >= 1024) {
+      return (totalSize / 1024).toFixed(2) + " GB";
+    }
+    return totalSize.toFixed(2) + " MB";
+  }, [totalSizeByFrameworkQuery.data]);
+
   return (
     <>
       {appIndexingQuery.isPending && <LoadingIndicator />}
 
       {appIndexingQuery.data && <ScrollArea className="h-dvh">
-        <div className="p-5 pb-0 flex gap-3">
-          <Input placeholder="Search by app name" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant={"outline"}>
-                <Filter />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="mr-3">
-              <DropdownMenuItem key="all" onClick={() => setSelectedFramework(null)}>
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24">
-                      <path fill="white" d="M14.116 20q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0-8.5q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14T14.115 4h4.27q.666 0 1.14.475T20 5.615v4.27q0 .666-.475 1.14t-1.14.475zm-8.5 0q-.667 0-1.141-.475T4 9.885v-4.27q0-.666.475-1.14T5.615 4h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0 8.5q-.667 0-1.141-.475T4 18.386v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14T9.885 20z"></path>
-                    </svg>
-                    <span>All</span>
-                    <span className="ml-auto text-foreground/50">{appIndexingQuery.data?.length || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="electron" onClick={() => setSelectedFramework("electron")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("electron")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Electron</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.electron || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="flutter" onClick={() => setSelectedFramework("flutter")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("flutter")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Flutter</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.flutter || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="qt" onClick={() => setSelectedFramework("qt")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("qt")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Qt</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.qt || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="native" onClick={() => setSelectedFramework("native")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("native")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Native</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.native || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="tauri" onClick={() => setSelectedFramework("tauri")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("tauri")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Tauri</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.tauri || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <div className="p-5 flex flex-col gap-3">
-          <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 gap-3">
-            {filteredApps?.map((app) => (
-              <>
-                <div className="flex flex-col p-5 items-center justify-end rounded-xl gap-2" key={app.name}>
-                  <TooltipProvider delayDuration={100}>
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <div className="">{renderFrameworkIcon(app.framework)}</div>
 
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        <p>{app.name}</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <div className="font-bold text-xs mt-2 text-center text-ellipsis overflow-hidden whitespace-nowrap w-full">{app.name}</div>
+        <div className="flex flex-col gap-5">
+          <div className="px-5 pt-5 pb-0 flex gap-3">
+            <Input placeholder="Search by app name" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant={"outline"}>
+                  <Filter />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="mr-3">
+                <DropdownMenuItem key="all" onClick={() => setSelectedFramework("all")}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24">
+                        <path fill="white" d="M14.116 20q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0-8.5q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14T14.115 4h4.27q.666 0 1.14.475T20 5.615v4.27q0 .666-.475 1.14t-1.14.475zm-8.5 0q-.667 0-1.141-.475T4 9.885v-4.27q0-.666.475-1.14T5.615 4h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0 8.5q-.667 0-1.141-.475T4 18.386v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14T9.885 20z"></path>
+                      </svg>
+                      <span>All</span>
+                      <span className="ml-auto text-foreground/50">{appIndexingQuery.data?.length || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="electron" onClick={() => setSelectedFramework("electron")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("electron")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Electron</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.electron || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="flutter" onClick={() => setSelectedFramework("flutter")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("flutter")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Flutter</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.flutter || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="qt" onClick={() => setSelectedFramework("qt")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("qt")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Qt</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.qt || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="native" onClick={() => setSelectedFramework("native")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("native")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Native</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.native || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="tauri" onClick={() => setSelectedFramework("tauri")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("tauri")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Tauri</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.tauri || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {selectedFramework !== "all" &&
+            <div className="items-center px-5">
+              <div className="flex justify-between items-center gap-2 bg-gradient-to-br from-purple-900 to-background p-5 px-8 rounded-xl">
+                <div className="">
+                  <div>
+                    {renderFrameworkIcon(selectedFramework || "electron", { width: 64, height: 64 })}
+                  </div>
                 </div>
-                
-              </>
+                <div className="flex gap-3 flex-col">
+                  <div className="flex flex-col items-end">
+                    <h3 className="text-right text-foreground/50 text-sm">Total Apps</h3>
+                    <span className="text-3xl font-bold text-foreground/90">{countByFramework?.[selectedFramework || "electron"] || 0}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <h3 className="text-right text-foreground/50 text-sm">Total Size</h3>
+                    <span>
+                      {totalSizeByFrameworkQuery.isPending ? <>
+                        <Loader2 className="animate-spin mt-3" />
+                      </> : <span className="text-3xl font-bold text-foreground/90">{totalSizeLabel}</span>}
 
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-            ))}
+            </div>
+          }
+          <div className="px-5 pt-0 flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
+              {filteredApps?.map((app) => (
+                <>
+                  <a className=" flex items-center transition-colors px-3 py-3 rounded-xl gap-4" key={app.name}>
+                    <div className="">{renderFrameworkIcon(app.framework)}</div>
+                    <div className="font-bold text-sm">{app.name}</div>
+                  </a>
+                </>
+              ))}
+            </div>
           </div>
         </div>
+        
       </ScrollArea>}
     </>
 
