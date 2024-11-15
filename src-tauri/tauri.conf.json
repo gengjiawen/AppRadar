@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "app-radar",
+  "productName": "App Radar",
   "version": "0.1.0",
   "identifier": "app-radar.randynamic.org",
   "build": {
