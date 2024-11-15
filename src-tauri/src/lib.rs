@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+use plist::Value;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -17,7 +18,7 @@ struct AppInfo {
 }
 
 #[tauri::command]
-fn get_app_frameworks() -> Vec<AppInfo> {
+async fn get_app_frameworks() -> Vec<AppInfo> {
     let mut results = Vec::new();
 
     // Get applications directory path
@@ -28,15 +29,32 @@ fn get_app_frameworks() -> Vec<AppInfo> {
             if let Ok(entry) = entry {
                 let path = entry.path();
                 if path.is_dir() && path.extension().and_then(|s| s.to_str()) == Some("app") {
-                    let app_name = path.file_stem().unwrap().to_string_lossy().to_string();
                     let path_str = path.to_string_lossy().to_string();
-                    let framework_type = detect_framework(&path);
+                    let plist_path = path.join("Contents/Info.plist");
+                    let app_name = if let Ok(plist_content) = fs::read_to_string(&plist_path) {
+                        let cursor = std::io::Cursor::new(plist_content);
+                        if let Ok(plist) = plist::Value::from_reader(cursor) {
+                            if let Some(name) = plist.as_dictionary().and_then(|dict| dict.get("CFBundleName")).and_then(|name| name.as_string()) {
+                                name.to_string()
+                            } else {
+                                path.file_stem().unwrap().to_string_lossy().to_string()
+                            }
+                        } else {
+                            path.file_stem().unwrap().to_string_lossy().to_string()
+                        }
+                    } else {
+                        path.file_stem().unwrap().to_string_lossy().to_string()
+                    };
+                    let framework_type = detect_framework(&path).await;
 
                     results.push(AppInfo {
                         name: app_name,
                         path: path_str,
                         framework: framework_type,
                     });
+                    results.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+                } else {
+                    println!("Not a directory: {}", path.display());
                 }
             }
         }
@@ -45,50 +63,7 @@ fn get_app_frameworks() -> Vec<AppInfo> {
     results
 }
 
-fn get_app_icon(app_path: &Path) -> String {
-    // Check common icon locations
-    let icon_locations = [
-        app_path.join("Contents/Resources/AppIcon.icns"),
-        app_path.join("Contents/Resources/Icon.icns"),
-        app_path.join("Contents/Resources/app.icns"),
-    ];
-
-    for icon_path in icon_locations {
-        if icon_path.exists() {
-            return icon_path.to_string_lossy().to_string();
-        }
-    }
-
-    // If no icon found in common locations, try to get from Info.plist
-    let info_plist_path = app_path.join("Contents/Info.plist");
-    if info_plist_path.exists() {
-        if let Ok(output) = std::process::Command::new("defaults")
-            .args([
-                "read",
-                &info_plist_path.to_string_lossy(),
-                "CFBundleIconFile",
-            ])
-            .output()
-        {
-            let icon_name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !icon_name.is_empty() {
-                // Check both with and without .icns extension
-                let icon_path = app_path.join(format!("Contents/Resources/{}.icns", icon_name));
-                let icon_path_no_ext = app_path.join(format!("Contents/Resources/{}", icon_name));
-
-                if icon_path.exists() {
-                    return icon_path.to_string_lossy().to_string();
-                } else if icon_path_no_ext.exists() {
-                    return icon_path_no_ext.to_string_lossy().to_string();
-                }
-            }
-        }
-    }
-
-    "".to_string()
-}
-
-fn detect_framework(app_path: &Path) -> String {
+async fn detect_framework(app_path: &Path) -> String {
     let contents_path = app_path.join("Contents");
     let frameworks_path = contents_path.join("Frameworks");
     let macos_path = contents_path.join("MacOS");
@@ -119,11 +94,32 @@ fn detect_framework(app_path: &Path) -> String {
                     let path = entry.path();
                     if path.is_file() {
                         // Use std::process::Command to run 'file' command
-                        if let Ok(output) = std::process::Command::new("file").arg(path).output() {
+                        if let Ok(output) = tokio::process::Command::new("file")
+                            .arg(&path)
+                            .output()
+                            .await 
+                        {
                             let output = String::from_utf8_lossy(&output.stdout);
                             if output.contains("Mach-O") {
                                 return "native".to_string();
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for Tauri
+    if let Ok(entries) = fs::read_dir(&macos_path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(content) = tokio::fs::read(&path).await {
+                        let content_str = String::from_utf8_lossy(&content);
+                        if content_str.contains("__TAURI_") {
+                            return "tauri".to_string();
                         }
                     }
                 }
@@ -137,6 +133,8 @@ fn detect_framework(app_path: &Path) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("")
