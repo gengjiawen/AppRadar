@@ -3,37 +3,59 @@ import "./App.css";
 import { useQuery } from "@tanstack/react-query";
 import { Input } from "./components/ui/input";
 import { Button } from "./components/ui/button";
-import { Filter } from "lucide-react";
+import { Filter, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollArea } from "./components/ui/scroll-area";
+
+const CachedSize = new Map<string, number>();
+async function getAppSize(path: string) {
+  if (CachedSize.has(path)) {
+    return CachedSize.get(path) as number;
+  }
+  const size = await invoke("get_app_size", { path });
+  CachedSize.set(path, size as number);
+  return size as number;
+}
+
 function App() {
 
   const appIndexingQuery = useQuery({
     queryKey: ["app-indexing"],
     queryFn: async () => {
       const frameworks = await invoke("get_app_frameworks");
-      return frameworks as any[];
+      return frameworks as {
+        name: string;
+        path: string;
+        framework: string;
+      }[];
     },
   });
 
-  const [selectedFramework, setSelectedFramework] = useState<string | null>(null);
+  const [selectedFramework, setSelectedFramework] = useState<string>("all");
   const [search, setSearch] = useState("");
 
   const filteredApps = useMemo(() => {
     if (search) {
       return appIndexingQuery.data?.filter((app) => app.name.toLowerCase().includes(search.toLowerCase()));
     } else {
-      return appIndexingQuery.data?.filter((app) => selectedFramework ? app.framework === selectedFramework : true);
+      return appIndexingQuery.data?.filter((app) => selectedFramework === "all" ? true : app.framework === selectedFramework);
     }
   }, [appIndexingQuery.data, selectedFramework, search]);
 
-  function renderFrameworkIcon(framework: string) {
-    const height = 32;
-    const width = 32;
+  function renderFrameworkIcon(framework: string, options?: {
+    width?: number;
+    height?: number;
+  }) {
+    const height = options?.height || 32;
+    const width = options?.width || 32;
     switch (framework) {
+      case "all":
+        return <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 24 24">
+          <path fill="white" d="M14.116 20q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0-8.5q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14T14.115 4h4.27q.666 0 1.14.475T20 5.615v4.27q0 .666-.475 1.14t-1.14.475zm-8.5 0q-.667 0-1.141-.475T4 9.885v-4.27q0-.666.475-1.14T5.615 4h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0 8.5q-.667 0-1.141-.475T4 18.386v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14T9.885 20z"></path>
+        </svg>
       case "tauri":
-        return <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 128 128">
+        return <svg xmlns="http://www.w3.org/2000/svg" width={width} height={height} viewBox="0 0 128 128">
           <path fill="#ffc131" d="M86.242 46.547a12.19 12.19 0 0 1-24.379 0c0-6.734 5.457-12.191 12.191-12.191a12.19 12.19 0 0 1 12.188 12.191m0 0"></path>
           <path fill="#24c8db" d="M41.359 81.453a12.19 12.19 0 1 1 24.383 0c0 6.734-5.457 12.191-12.191 12.191S41.36 88.187 41.36 81.453zm0 0"></path>
           <path fill="#ffc131" d="M99.316 85.637a46.5 46.5 0 0 1-16.059 6.535a32.7 32.7 0 0 0 1.797-10.719a33 33 0 0 0-.242-4.02a32.7 32.7 0 0 0 6.996-3.418a32.7 32.7 0 0 0 12.066-14.035a32.71 32.71 0 0 0-21.011-44.934a32.72 32.72 0 0 0-33.91 10.527a33 33 0 0 0-1.48 1.91a54.3 54.3 0 0 0-17.848 5.184A46.54 46.54 0 0 1 60.25 2.094a46.53 46.53 0 0 1 26.34-.375c8.633 2.418 16.387 7.273 22.324 13.984s9.813 15 11.16 23.863a46.54 46.54 0 0 1-20.758 46.071M30.18 41.156l11.41 1.402a32.4 32.4 0 0 1 1.473-6.469a46.4 46.4 0 0 0-12.883 5.066zm0 0"></path>
@@ -91,87 +113,143 @@ function App() {
     }, {} as Record<string, number>);
   }, [appIndexingQuery.data]);
 
+  const totalSizeByFrameworkQuery = useQuery({
+    queryKey: ["totalSizeByFramework", selectedFramework],
+    queryFn: async () => {
+      console.log("querying", selectedFramework);
+      const apps = appIndexingQuery.data?.filter(app => app.framework === selectedFramework);
+      const totalSize = await Promise.all(apps?.map(app => getAppSize(app.path)) || []);
+      return totalSize.reduce((acc, size) => acc + size, 0);
+    },
+    staleTime: Infinity,
+    enabled: !!selectedFramework,
+  });
+
+  const totalSizeLabel = useMemo(() => {
+    const totalSize = (totalSizeByFrameworkQuery.data || 0);
+    if (totalSize >= 1024) {
+      return (totalSize / 1024).toFixed(2) + " GB";
+    }
+    return totalSize.toFixed(2) + " MB";
+  }, [totalSizeByFrameworkQuery.data]);
+
   return (
     <>
       {appIndexingQuery.isPending && <LoadingIndicator />}
 
       {appIndexingQuery.data && <ScrollArea className="h-dvh">
-        <div className="p-5 pb-0 flex gap-3">
-          <Input placeholder="Search by app name" value={search} onChange={(e) => setSearch(e.target.value)} />
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant={"outline"}>
-                <Filter />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="mr-3">
-              <DropdownMenuItem key="all" onClick={() => setSelectedFramework(null)}>
-                <div className="flex items-center gap-2">
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24">
-                      <path fill="white" d="M14.116 20q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0-8.5q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14T14.115 4h4.27q.666 0 1.14.475T20 5.615v4.27q0 .666-.475 1.14t-1.14.475zm-8.5 0q-.667 0-1.141-.475T4 9.885v-4.27q0-.666.475-1.14T5.615 4h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0 8.5q-.667 0-1.141-.475T4 18.386v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14T9.885 20z"></path>
-                    </svg>
-                    <span>All</span>
-                    <span className="ml-auto text-foreground/50">{appIndexingQuery.data?.length || 0}</span>
+
+        <div className="flex flex-col gap-5">
+          <div className="px-5 pt-5 pb-0 flex gap-3">
+            <Input placeholder="Search by app name" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant={"outline"}>
+                  <Filter />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="mr-3">
+                <DropdownMenuItem key="all" onClick={() => setSelectedFramework("all")}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <svg xmlns="http://www.w3.org/2000/svg" width={16} height={16} viewBox="0 0 24 24">
+                        <path fill="white" d="M14.116 20q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0-8.5q-.667 0-1.141-.475t-.475-1.14v-4.27q0-.666.475-1.14T14.115 4h4.27q.666 0 1.14.475T20 5.615v4.27q0 .666-.475 1.14t-1.14.475zm-8.5 0q-.667 0-1.141-.475T4 9.885v-4.27q0-.666.475-1.14T5.615 4h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14t-1.14.475zm0 8.5q-.667 0-1.141-.475T4 18.386v-4.27q0-.666.475-1.14t1.14-.475h4.27q.666 0 1.14.475t.475 1.14v4.27q0 .666-.475 1.14T9.885 20z"></path>
+                      </svg>
+                      <span>All</span>
+                      <span className="ml-auto text-foreground/50">{appIndexingQuery.data?.length || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="electron" onClick={() => setSelectedFramework("electron")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("electron")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Electron</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.electron || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="flutter" onClick={() => setSelectedFramework("flutter")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("flutter")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Flutter</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.flutter || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="qt" onClick={() => setSelectedFramework("qt")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("qt")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Qt</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.qt || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="native" onClick={() => setSelectedFramework("native")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("native")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Native</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.native || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem key="tauri" onClick={() => setSelectedFramework("tauri")}>
+                  <div className="flex items-center gap-2">
+                    {renderFrameworkIcon("tauri")}
+                    <div className="flex flex-1 items-center gap-2 justify-between w-full">
+                      <span>Tauri</span>
+                      <span className="ml-auto text-foreground/50">{countByFramework?.tauri || 0}</span>
+                    </div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {selectedFramework !== "all" &&
+            <div className="items-center px-5">
+              <div className="flex justify-between items-center gap-2 bg-gradient-to-br from-purple-900 to-background p-5 px-8 rounded-xl">
+                <div className="">
+                  <div>
+                    {renderFrameworkIcon(selectedFramework || "electron", { width: 64, height: 64 })}
                   </div>
                 </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="electron" onClick={() => setSelectedFramework("electron")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("electron")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Electron</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.electron || 0}</span>
+                <div className="flex gap-3 flex-col">
+                  <div className="flex flex-col items-end">
+                    <h3 className="text-right text-foreground/50 text-sm">Total Apps</h3>
+                    <span className="text-3xl font-bold text-foreground/90">{countByFramework?.[selectedFramework || "electron"] || 0}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <h3 className="text-right text-foreground/50 text-sm">Total Size</h3>
+                    <span>
+                      {totalSizeByFrameworkQuery.isPending ? <>
+                        <Loader2 className="animate-spin mt-3" />
+                      </> : <span className="text-3xl font-bold text-foreground/90">{totalSizeLabel}</span>}
+
+                    </span>
                   </div>
                 </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="flutter" onClick={() => setSelectedFramework("flutter")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("flutter")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Flutter</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.flutter || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="qt" onClick={() => setSelectedFramework("qt")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("qt")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Qt</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.qt || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="native" onClick={() => setSelectedFramework("native")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("native")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Native</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.native || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem key="tauri" onClick={() => setSelectedFramework("tauri")}>
-                <div className="flex items-center gap-2">
-                  {renderFrameworkIcon("tauri")}
-                  <div className="flex flex-1 items-center gap-2 justify-between w-full">
-                    <span>Tauri</span>
-                    <span className="ml-auto text-foreground/50">{countByFramework?.tauri || 0}</span>
-                  </div>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <div className="p-5 flex flex-col gap-3">
-          {filteredApps?.map((app) => (
-            <div className="flex p-5 justify-between items-center border rounded-xl" key={app.name}>
-              <div className="font-bold text-2xl">{app.name}</div>
-              <div className="">{renderFrameworkIcon(app.framework)}</div>
+              </div>
+
             </div>
-          ))}
+          }
+          <div className="px-5 pt-0 flex flex-col gap-3">
+            <div className="flex flex-col gap-3">
+              {filteredApps?.map((app) => (
+                <>
+                  <a className=" flex items-center transition-colors px-3 py-3 rounded-xl gap-4" key={app.name}>
+                    <div className="">{renderFrameworkIcon(app.framework)}</div>
+                    <div className="font-bold text-sm">{app.name}</div>
+                  </a>
+                </>
+              ))}
+            </div>
+          </div>
         </div>
+        
       </ScrollArea>}
     </>
 
@@ -184,8 +262,8 @@ function LoadingIndicator() {
   return <div className="h-dvh flex items-center justify-center">
     <div className="animate-spin">
       <svg xmlns="http://www.w3.org/2000/svg" width={24} height={24} viewBox="0 0 24 24">
-        <path fill="currentColor" d="M12 2A10 10 0 1 0 22 12A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8A8 8 0 0 1 12 20Z" opacity={0.5}/>
-        <path fill="currentColor" d="M20 12h2A10 10 0 0 0 12 2V4A8 8 0 0 1 20 12Z"/>
+        <path fill="currentColor" d="M12 2A10 10 0 1 0 22 12A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8A8 8 0 0 1 12 20Z" opacity={0.5} />
+        <path fill="currentColor" d="M20 12h2A10 10 0 0 0 12 2V4A8 8 0 0 1 20 12Z" />
       </svg>
     </div>
   </div>

@@ -2,7 +2,6 @@ use serde::Serialize;
 use std::fs;
 use std::path::Path;
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
-use plist::Value;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -15,6 +14,24 @@ struct AppInfo {
     name: String,
     path: String,
     framework: String,
+}
+
+#[tauri::command]
+async fn get_app_size(path: &str) -> Result<f64, String> {
+    // Get app size by walking directory
+    let mut total_size: u64 = 0;
+    
+    let walker = walkdir::WalkDir::new(&path);
+    for entry in walker {
+        if let Ok(entry) = entry {
+            let metadata = entry.metadata().map_err(|e| e.to_string())?;
+            total_size += metadata.len();
+        }
+    }
+
+    // Convert bytes to MB 
+    let size_mb = (total_size as f64) / (1024.0 * 1024.0);
+    Ok(size_mb)
 }
 
 #[tauri::command]
@@ -34,7 +51,11 @@ async fn get_app_frameworks() -> Vec<AppInfo> {
                     let app_name = if let Ok(plist_content) = fs::read_to_string(&plist_path) {
                         let cursor = std::io::Cursor::new(plist_content);
                         if let Ok(plist) = plist::Value::from_reader(cursor) {
-                            if let Some(name) = plist.as_dictionary().and_then(|dict| dict.get("CFBundleName")).and_then(|name| name.as_string()) {
+                            if let Some(name) = plist
+                                .as_dictionary()
+                                .and_then(|dict| dict.get("CFBundleName"))
+                                .and_then(|name| name.as_string())
+                            {
                                 name.to_string()
                             } else {
                                 path.file_stem().unwrap().to_string_lossy().to_string()
@@ -97,7 +118,7 @@ async fn detect_framework(app_path: &Path) -> String {
                         if let Ok(output) = tokio::process::Command::new("file")
                             .arg(&path)
                             .output()
-                            .await 
+                            .await
                         {
                             let output = String::from_utf8_lossy(&output.stdout);
                             if output.contains("Mach-O") {
@@ -168,7 +189,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![greet, get_app_frameworks])
+        .invoke_handler(tauri::generate_handler![greet, get_app_frameworks, get_app_size])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
