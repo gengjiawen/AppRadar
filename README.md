@@ -1,4 +1,4 @@
-![CleanShot 2024-11-15 at 17 14 37@2x](https://github.com/user-attachments/assets/46eb259f-5649-41fa-9b0f-d40d93ef2839)
+![CleanShot 2024-11-15 at 17 32 49@2x](https://github.com/user-attachments/assets/11a01730-1b48-41ae-a22e-615bed2af56d)
 
 # Download
 
