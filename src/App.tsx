@@ -5,7 +5,7 @@ import { Input } from "./components/ui/input";
 import { Button } from "./components/ui/button";
 import { Filter, Loader2 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ScrollArea } from "./components/ui/scroll-area";
 
 const CachedSize = new Map<string, number>();
