@@ -6,6 +6,7 @@ import { Button } from "./components/ui/button";
 import { Filter } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "./components/ui/dropdown-menu";
 import { useMemo, useState } from "react";
+import { ScrollArea } from "./components/ui/scroll-area";
 function App() {
 
   const appIndexingQuery = useQuery({
@@ -85,7 +86,8 @@ function App() {
 
   return (
     <>
-      <main className="overflow-scroll">
+      {appIndexingQuery.isPending && <LoadingIndicator />}
+      <ScrollArea className="h-dvh">
         <div className="p-5 pb-0 flex gap-3">
           <Input placeholder="Search by app name" value={search} onChange={(e) => setSearch(e.target.value)} />
           <DropdownMenu>
@@ -153,10 +155,21 @@ function App() {
             </div>
           ))}
         </div>
-      </main>
+      </ScrollArea>
     </>
 
   );
 }
 
 export default App;
+
+function LoadingIndicator() {
+  return <div className="h-dvh flex items-center justify-center">
+    <div className="animate-spin">
+      <svg xmlns="http://www.w3.org/2000/svg" width={24} height={24} viewBox="0 0 24 24">
+        <path fill="currentColor" d="M12 2A10 10 0 1 0 22 12A10 10 0 0 0 12 2Zm0 18a8 8 0 1 1 8-8A8 8 0 0 1 12 20Z" opacity={0.5}/>
+        <path fill="currentColor" d="M20 12h2A10 10 0 0 0 12 2V4A8 8 0 0 1 20 12Z"/>
+      </svg>
+    </div>
+  </div>
+}
