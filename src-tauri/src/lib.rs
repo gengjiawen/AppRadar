@@ -18,7 +18,7 @@ struct AppInfo {
 }
 
 #[tauri::command]
-fn get_app_frameworks() -> Vec<AppInfo> {
+async fn get_app_frameworks() -> Vec<AppInfo> {
     let mut results = Vec::new();
 
     // Get applications directory path
@@ -45,7 +45,7 @@ fn get_app_frameworks() -> Vec<AppInfo> {
                     } else {
                         path.file_stem().unwrap().to_string_lossy().to_string()
                     };
-                    let framework_type = detect_framework(&path);
+                    let framework_type = detect_framework(&path).await;
 
                     results.push(AppInfo {
                         name: app_name,
@@ -63,7 +63,7 @@ fn get_app_frameworks() -> Vec<AppInfo> {
     results
 }
 
-fn detect_framework(app_path: &Path) -> String {
+async fn detect_framework(app_path: &Path) -> String {
     let contents_path = app_path.join("Contents");
     let frameworks_path = contents_path.join("Frameworks");
     let macos_path = contents_path.join("MacOS");
@@ -85,6 +85,7 @@ fn detect_framework(app_path: &Path) -> String {
     if frameworks_path.join("QtCore.framework").exists() {
         return "qt".to_string();
     }
+
     // Check for native Swift/SwiftUI apps by looking for Mach-O binaries in MacOS dir
     if frameworks_path.exists() {
         if let Ok(entries) = fs::read_dir(&macos_path) {
@@ -93,11 +94,32 @@ fn detect_framework(app_path: &Path) -> String {
                     let path = entry.path();
                     if path.is_file() {
                         // Use std::process::Command to run 'file' command
-                        if let Ok(output) = std::process::Command::new("file").arg(path).output() {
+                        if let Ok(output) = tokio::process::Command::new("file")
+                            .arg(&path)
+                            .output()
+                            .await 
+                        {
                             let output = String::from_utf8_lossy(&output.stdout);
                             if output.contains("Mach-O") {
                                 return "native".to_string();
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for Tauri
+    if let Ok(entries) = fs::read_dir(&macos_path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(content) = tokio::fs::read(&path).await {
+                        let content_str = String::from_utf8_lossy(&content);
+                        if content_str.contains("__TAURI_") {
+                            return "tauri".to_string();
                         }
                     }
                 }
