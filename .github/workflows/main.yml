@@ -72,6 +72,6 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-          repo: chatwise-releases
-          owner: egoist
+          repo: AppRadar
+          owner: djyde
           releaseCommitish: main
