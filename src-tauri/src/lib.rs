@@ -106,6 +106,21 @@ async fn detect_framework(app_path: &Path) -> String {
     if frameworks_path.join("QtCore.framework").exists() {
         return "qt".to_string();
     }
+    
+    // External check for Qt
+    if frameworks_path.exists() {
+        if let Ok(entries) = fs::read_dir(&frameworks_path) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    let path = entry.path();
+                    // Check for Qt
+                    if path.join("Versions/Current/Frameworks/QtCore.framework").exists() {
+                        return "qt".to_string();
+                    }
+                }
+            }
+        }
+    }
 
     // Check for native Swift/SwiftUI apps by looking for Mach-O binaries in MacOS dir
     if frameworks_path.exists() {
